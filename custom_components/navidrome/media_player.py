@@ -30,9 +30,16 @@ class NavidromeMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
         tracks = data.get("now_playing")
 
-        if not tracks:
-            return STATE_IDLE
+        # Get the time since last network activity and the track duration
+        minutes_ago = tracks[0].get("minutesAgo")
+        duration = tracks[0].get("duration")
 
+        if minutes_ago is not None and duration is not None:
+            # minutesAgo is in minutes, duration is in seconds. 
+            # If the silence has lasted longer than the song itself, it's a ghost stream.
+            if (minutes_ago * 60) > duration:
+                return STATE_IDLE
+        
         return STATE_PLAYING
 
     @property

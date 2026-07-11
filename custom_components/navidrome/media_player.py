@@ -30,6 +30,9 @@ class NavidromeMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
         tracks = data.get("now_playing")
 
+        if not tracks or len(tracks) == 0:
+            return STATE_IDLE
+
         # Get the time since last network activity and the track duration
         minutes_ago = tracks[0].get("minutesAgo")
         duration = tracks[0].get("duration")

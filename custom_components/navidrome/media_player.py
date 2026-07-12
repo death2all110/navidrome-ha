@@ -23,19 +23,16 @@ class NavidromeMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     @property
     def state(self):
-        data = self.coordinator.data
+        # Safely fetch the track using the built-in helper
+        track = self._get_current_track()
 
-        if not data:
-            return STATE_IDLE
-
-        tracks = data.get("now_playing")
-
-        if not tracks or len(tracks) == 0:
+        # If no track is playing or the list is empty, return IDLE
+        if not track:
             return STATE_IDLE
 
         # Get the time since last network activity and the track duration
-        minutes_ago = tracks[0].get("minutesAgo")
-        duration = tracks[0].get("duration")
+        minutes_ago = track.get("minutesAgo")
+        duration = track.get("duration")
 
         if minutes_ago is not None and duration is not None:
             # minutesAgo is in minutes, duration is in seconds. 

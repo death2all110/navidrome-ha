@@ -1,5 +1,5 @@
 from homeassistant.components.media_player import MediaPlayerEntity
-from homeassistant.const import STATE_IDLE, STATE_PLAYING
+from homeassistant.const import STATE_IDLE, STATE_PLAYING, STATE_PAUSED
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from homeassistant.components.media_player import MediaPlayerEntityFeature
 from homeassistant.util import dt as dt_util
@@ -20,6 +20,8 @@ class NavidromeMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
         super().__init__(coordinator)
         self._attr_name = "Navidrome"
         self._attr_unique_id = "navidrome_media_player"
+        self._last_paused_track_id = None
+        self._paused_at = None
 
     @property
     def state(self):
@@ -28,17 +30,59 @@ class NavidromeMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
         # If no track is playing or the list is empty, return IDLE
         if not track:
+            self._paused_at = None
+            self._last_paused_track_id = None
             return STATE_IDLE
 
-        # Get the time since last network activity and the track duration
+        # Get the unique ID of the track currently being evaluated
+        track_id = track.get("id")
+
+        # OpenSubsonic 'playbackReport' Extension (Modern Clients)
+        playback_state = track.get("state")
+        
+        if playback_state is not None:
+            state_val = str(playback_state).lower()
+            
+            if state_val in ["0", "stopped", "idle"]:
+                self._paused_at = None
+                self._last_paused_track_id = None
+                return STATE_IDLE
+                
+            elif state_val in ["2", "paused"]:
+                current_time = dt_util.utcnow()
+                
+                # If we just switched to paused, or the song changed, lock in the start time
+                if self._paused_at == None or self._last_paused_track_id != track_id:
+                    self._paused_at = current_time
+                    self._last_paused_track_id = track_id
+                
+                paused_duration = (current_time - self._paused_at).total_seconds()
+                
+                # If paused longer than 60 seconds on the same track, force IDLE
+                if paused_duration >= 60:
+                    return STATE_IDLE
+                    
+                return STATE_PAUSED
+                
+            elif state_val in ["1", "playing", "3", "buffering"]:
+                # Reset local pause state tracking immediately when playback resumes
+                self._paused_at = None
+                self._last_paused_track_id = None
+                return STATE_PLAYING
+            else:
+                return STATE_PLAYING
+
+        # Legacy Heuristic Fallback (For old clients without the 'state' field)
         minutes_ago = track.get("minutesAgo")
         duration = track.get("duration")
 
-        if minutes_ago is not None and duration is not None:
-            # minutesAgo is in minutes, duration is in seconds. 
-            # If the silence has lasted longer than the song itself, it's a ghost stream.
-            if (minutes_ago * 60) > duration:
+        if minutes_ago is not None:
+            if minutes_ago >= 15:
                 return STATE_IDLE
+            if duration is not None and (minutes_ago * 60) > duration:
+                return STATE_IDLE
+            if minutes_ago >= 1:
+                return STATE_PAUSED
         
         return STATE_PLAYING
 
@@ -100,16 +144,28 @@ class NavidromeMediaPlayer(CoordinatorEntity, MediaPlayerEntity):
 
     @property
     def media_position(self):
-        minutes_ago = self._get("minutesAgo")
+        track = self._get_current_track()
+        if not track:
+            return None
 
-        if minutes_ago is not None:
-            return minutes_ago * 60
+        # Look for the OpenSubsonic playbackReport extension
+        position_ms = track.get("positionMs")
+        
+        if position_ms is not None:
+            # Home Assistant expects this value in seconds, not milliseconds
+            return position_ms / 1000.0
             
         return None
 
     @property
     def media_position_updated_at(self):
-        return dt_util.utcnow()
+        track = self._get_current_track()
+        
+        # Only provide an updated timestamp if we actually have a position
+        if track and track.get("positionMs") is not None:
+            return dt_util.utcnow()
+            
+        return None
 
     @property
     def media_content_type(self):

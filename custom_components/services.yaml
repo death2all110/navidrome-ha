@@ -1,0 +1,3 @@
+start_scan:
+  name: "Start Scan"
+  description: "Triggers a full media library scan on the Navidrome server and refreshes local data."

@@ -1,9 +1,17 @@
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.const import Platform
 
 from .const import DOMAIN, CONF_HOST, CONF_USERNAME, CONF_PASSWORD, CONF_USE_SSL
 from .api import NavidromeAPI
 from .coordinator import NavidromeCoordinator
+
+# Define all platforms used by this integration in one place
+PLATFORMS: list[Platform] = [
+    Platform.MEDIA_PLAYER,
+    Platform.SENSOR,
+    Platform.BUTTON,
+]
 
 async def async_setup(hass: HomeAssistant, config: dict):
     return True
@@ -29,7 +37,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
 
     async def start_scan_service(call):
         await hass.async_add_executor_job(api.start_scan)
-
         # refrescar datos tras lanzar scan
         await coordinator.async_request_refresh()
 
@@ -39,17 +46,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         start_scan_service
     )
 
-    await hass.config_entries.async_forward_entry_setups(
-        entry, ["media_player", "sensor", "button"]
-    )
+    # Use the PLATFORMS constant to load everything safely
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     return True
 
-
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry):
-    unload_ok = await hass.config_entries.async_unload_platforms(
-        entry, ["media_player", "sensor"]
-    )
+    # Use the same PLATFORMS constant to ensure nothing gets left behind in memory
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
